@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
+import android.util.Log;
 
 import com.android.volley.AuthFailureError;
 import com.android.volley.DefaultRetryPolicy;
@@ -294,6 +295,7 @@ public abstract class BaseAsyncHttpClient implements IAsyncHttpLient{
         public void onResponse(String response, int id) {
             activityListener.cancelLoadingDialog();
             MLog.i("OkHttpUtils MyStringCallBack:"+response);
+            Log.d("LM", "onResponse: " + response);
             postMsg(response, request_tag);
         }
         @Override

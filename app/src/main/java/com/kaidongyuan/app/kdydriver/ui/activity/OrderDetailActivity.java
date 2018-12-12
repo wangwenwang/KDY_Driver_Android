@@ -1,12 +1,19 @@
 package com.kaidongyuan.app.kdydriver.ui.activity;
 
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
+import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -33,28 +40,40 @@ import com.kaidongyuan.app.basemodule.utils.nomalutils.StringUtils;
 import com.kaidongyuan.app.basemodule.utils.nomalutils.SystemUtil;
 import com.kaidongyuan.app.basemodule.widget.MLog;
 import com.kaidongyuan.app.basemodule.widget.SlidingTitleView;
+import com.kaidongyuan.app.basemodule.widget.loadingDialog.MyLoadingDialog;
 import com.kaidongyuan.app.kdydriver.R;
 import com.kaidongyuan.app.kdydriver.adapter.OrderDetailsSimpleAdapter;
 import com.kaidongyuan.app.kdydriver.bean.order.CustomerAutographAndPicture;
 import com.kaidongyuan.app.kdydriver.bean.order.Order;
 import com.kaidongyuan.app.kdydriver.constants.Constants;
 import com.kaidongyuan.app.kdydriver.httpclient.OrderAsyncHttpClient;
-import com.kaidongyuan.app.kdydriver.serviceAndReceiver.TrackingService;
 import com.kaidongyuan.app.kdydriver.ui.base.BaseActivity;
 import com.kaidongyuan.app.kdydriver.utils.ListViewUtils;
 import com.kaidongyuan.app.kdydriver.utils.baidumapUtils.LocationPointUtil;
 
+import org.json.JSONException;
+
+import java.io.IOException;
 import java.net.URISyntaxException;
 import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
+import static android.widget.ImageView.ScaleType.FIT_XY;
+
 /**
  * ${PEOJECT_NAME}
  * Created by Administrator on 2016/10/13.
  */
 public class OrderDetailActivity extends BaseActivity implements AsyncHttpCallback{
+    protected MyLoadingDialog myLoadingDialog;
 
     private OrderAsyncHttpClient mClient;
     private final String Get_Tms_Info = "Get_Tms_Info";
@@ -86,6 +105,7 @@ public class OrderDetailActivity extends BaseActivity implements AsyncHttpCallba
     //高精度模式
     private LocationClientOption.LocationMode tempMode = LocationClientOption.LocationMode.Hight_Accuracy;
     private boolean againBoolean=true;
+    private Button qrCodeBtn;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,6 +116,8 @@ public class OrderDetailActivity extends BaseActivity implements AsyncHttpCallba
         mClient.setShowToast(false);
         initView();
         getData();
+
+        Log.d("LM", "onCreate: ");
     }
 
     private void initView() {
@@ -141,6 +163,109 @@ public class OrderDetailActivity extends BaseActivity implements AsyncHttpCallba
 //        myListener=new MyLocationListener();
 //        mLocationClient.registerLocationListener(myListener);
 //        initLocationClient();
+//        qrCodeBtn = (Button) findViewById(R.id.button);
+    }
+
+    public Bitmap Bytes2Bimap(byte[] b) {
+        if (b.length != 0) {
+            return BitmapFactory.decodeByteArray(b, 0, b.length);
+        } else {
+            return null;
+        }
+    }
+
+    public void onButtonClick(View view){
+
+        showLoadingDialog();
+
+        new Thread() {
+            public void run() {
+                String access_token = "";
+                OkHttpClient client = new OkHttpClient();
+                RequestBody body = RequestBody.create(null, "");
+                Request request = new Request.Builder()
+                        .url("http://oms.kaidongyuan.com:8088/api/wxGetWX_Voucher")
+                        .post(body)
+                        .addHeader("cache-control", "no-cache")
+                        .build();
+                try {
+                    Response response = client.newCall(request).execute();
+
+                    org.json.JSONObject responseobj = new org.json.JSONObject(response.body().string());
+                    org.json.JSONArray array = responseobj.getJSONArray("result");
+                    org.json.JSONObject dict = array.getJSONObject(0);
+                    access_token = dict.getString("VOUCHER");
+                    Log.d("LM", "access_token：" + access_token);
+
+                } catch (IOException e) {
+                    Log.d("LM", "IOException: " + e);
+                    e.printStackTrace();
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+
+                MediaType mediaType = MediaType.parse("application/octet-stream");
+                body = RequestBody.create(mediaType, "{\"scene\":\"" + mOrder.getORD_NO() + "\",\"width\":\"650\"}");
+                request = new Request.Builder()
+                        .url("https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=" + access_token)
+                        .post(body)
+                        .addHeader("cache-control", "no-cache")
+                        .build();
+                try {
+                    Response response = client.newCall(request).execute();
+                    Log.d("LM", "onButtonClick2: " + response);
+                    byte[] targets = response.body().bytes();
+                    final Bitmap bit = Bytes2Bimap(targets);
+                    cancelLoadingDialog();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+
+                            RelativeLayout QRLayout = (RelativeLayout) findViewById(R.id.relativeLayout_orderdetail);
+
+                            // 背景
+                            final View QRBgView = new View(getMContext());
+                            QRBgView.setBackgroundColor(Color.parseColor("#000000"));
+                            QRBgView.setAlpha((float) 0.9);
+                            RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.FILL_PARENT, RelativeLayout.LayoutParams.FILL_PARENT);
+                            QRBgView.setLayoutParams(params);
+                            QRLayout.addView(QRBgView);
+
+                            // 图片
+                            final ImageView QRImageView = new ImageView(getMContext());
+                            QRImageView.setImageBitmap(bit);
+                            params = new RelativeLayout.LayoutParams(650, 650);
+                            params.addRule(RelativeLayout.CENTER_IN_PARENT);
+                            QRImageView.setLayoutParams(params);
+                            QRLayout.addView(QRImageView);
+
+                            // 关闭按钮
+                            final ImageButton QRDeleteBtn = new ImageButton(getMContext());
+                            QRDeleteBtn.setBackgroundDrawable(getResources().getDrawable(R.drawable.lm_close));
+                            QRDeleteBtn.setScaleType(FIT_XY);
+                            params = new RelativeLayout.LayoutParams(90, 90);
+                            params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+                            params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+                            params.setMargins(0, 20, 20, 0);
+                            QRDeleteBtn.setLayoutParams(params);
+                            QRLayout.addView(QRDeleteBtn);
+
+                            QRDeleteBtn.setOnClickListener(new View.OnClickListener() {
+                                @Override
+                                public void onClick(View v) {
+                                    QRBgView.setVisibility(View.GONE);
+                                    QRImageView.setVisibility(View.GONE);
+                                    QRDeleteBtn.setVisibility(View.GONE);
+                                }
+                            });
+                        }
+                    });
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    cancelLoadingDialog();
+                }
+            }
+        }.start();
     }
 
 
@@ -663,6 +788,38 @@ public class OrderDetailActivity extends BaseActivity implements AsyncHttpCallba
             currentlocation=location;
             mLocationClient.stop();
             return;
+        }
+    }
+
+    @Override
+    public void showLoadingDialog() {
+        if (myLoadingDialog == null) {
+            myLoadingDialog = new MyLoadingDialog(this);
+        }
+        cancelLoadingDialog();
+        myLoadingDialog.showDialog();
+    }
+
+    @Override
+    public void cancelLoadingDialog() {
+        if (myLoadingDialog != null && myLoadingDialog.isShowing()) {
+            myLoadingDialog.dismiss();
+        }
+    }
+
+    @Override
+    public void showProgressBarLoadingDialog() {
+        if (myLoadingDialog == null) {
+            myLoadingDialog = new MyLoadingDialog(this);
+        }
+        cancelLoadingDialog();
+        myLoadingDialog.showProgressDialog();
+    }
+
+    @Override
+    public void setProgressBarLoading(int progress) {
+        if (myLoadingDialog!=null&&myLoadingDialog.isShowing()){
+            myLoadingDialog.setLoadingProgressBar(progress);
         }
     }
 }
